@@ -182,7 +182,6 @@ export function AnimatedChatLanding({ laptops }: AnimatedChatLandingProps) {
         <header className={`sticky-header ${!headerVisible ? 'hidden' : ''}`}>
           <span className="logo">Laptick</span>
           <nav>
-            <span>Chat with AI</span>
             <span>All Laptops</span>
             <span>Buying Guides</span>
             <span>Understanding</span>
