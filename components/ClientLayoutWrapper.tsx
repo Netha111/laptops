@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { NavLinks } from '@/components/NavLinks'
 import { MobileNav } from '@/components/MobileNav'
-import { AiAssistant } from '@/components/AiAssistant'
 
 function SiteHeader({ isChat }: { isChat?: boolean }) {
   if (isChat) {
@@ -53,6 +52,11 @@ function SiteFooter() {
                 </Link>
               </li>
               <li>
+                <Link href="/faq" className="hover:text-primary">
+                  Laptop Buying FAQ
+                </Link>
+              </li>
+              <li>
                 <Link href="/about" className="hover:text-primary">
                   About
                 </Link>
@@ -78,6 +82,7 @@ export function ClientLayoutWrapper({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const isAdmin = pathname?.startsWith('/admin')
   const isChat = pathname === '/chat'
+  const isHome = pathname === '/'
 
   if (isAdmin) {
     return <>{children}</>
@@ -85,10 +90,9 @@ export function ClientLayoutWrapper({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex flex-col">
-      <SiteHeader isChat={isChat} />
+      {!isHome && <SiteHeader isChat={isChat} />}
       <main className="flex-1 flex flex-col min-h-0">{children}</main>
       {!isChat && <SiteFooter />}
-      <AiAssistant />
     </div>
   )
 }

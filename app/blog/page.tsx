@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Laptop Buying Guides — Laptick',
+  title: 'Complete Laptop Buying Guide for India 2026',
   description:
-    'Simple laptop buying guides for India — understand specs without the jargon. Best laptops by budget, use case, and brand explained in plain English.',
+    'Learn how to choose the right laptop in India. Specs explained, budget guides, use-case buying guides, and honest laptop recommendations.',
+  keywords: ['laptop buying guide India', 'how to buy laptop in India', 'best laptops by budget India'],
 }
 
 export const dynamic = 'force-dynamic'
@@ -80,9 +81,16 @@ const ARTICLES = [
   { title: 'Best Laptops for Students Under ₹60,000 in India (2026)', tag: 'Students', slug: 'best-laptop-for-students-under-60k-india-2026', date: 'Published' },
   { title: 'Best Gaming Laptops Under ₹1,20,000 in India (2026)', tag: 'Gaming', slug: 'best-gaming-laptop-under-120000-india', date: 'Published' },
   { title: 'Best Laptops for Programming India', tag: 'Coding', slug: 'best-laptop-for-programming-india', date: 'Published' },
-  { title: 'Best Laptops for Video Editing Under ₹1,00,000 (2026)', tag: 'Video Editing', slug: null, date: 'Coming soon' },
-  { title: 'MacBook Air M4 vs Dell XPS 13: Which for Developers?', tag: 'Comparison', slug: null, date: 'Coming soon' },
-  { title: 'Why Your ₹80,000 Laptop Feels Slower Than a ₹50,000 One', tag: 'Explained', slug: null, date: 'Coming soon' },
+  { title: 'Best Laptops for Video Editing Under ₹1,00,000 (2026)', tag: 'Video Editing', slug: 'best-laptops-for-video-editing-under-100k-india-2026', date: 'Published' },
+  { title: 'MacBook Air M4 vs Dell XPS 13: Which for Developers?', tag: 'Comparison', slug: 'macbook-air-m4-vs-dell-xps-13-developers', date: 'Published' },
+  { title: 'Why Your ₹80,000 Laptop Feels Slower Than a ₹50,000 One', tag: 'Explained', slug: 'why-80k-laptop-feels-slower-than-50k-laptop', date: 'Published' },
+]
+
+const POPULAR_GUIDES = [
+  { href: '/blog/best-laptop-for-students-under-60k-india-2026', label: 'Student laptops under Rs. 60,000' },
+  { href: '/blog/best-gaming-laptop-under-120000-india', label: 'Gaming laptops under Rs. 1,20,000' },
+  { href: '/blog/best-laptop-for-programming-india', label: 'Programming laptop guide' },
+  { href: '/faq', label: 'Laptop buying questions answered' },
 ]
 
 export default function BlogPage() {
@@ -94,16 +102,26 @@ export default function BlogPage() {
         <div style={{ paddingBlock: 'clamp(1.5rem, 5vw, 4rem)' }}>
           <p className="themed-eyebrow">Buying Guides</p>
           <h1 className="themed-heading mt-4">
-            Laptop specs explained in plain English.
+            Complete laptop buying guide for India.
           </h1>
           <p className="themed-subtext mt-6" style={{ maxWidth: 720 }}>
-            No jargon without explanation. Know exactly what to look for before spending your money.
+            No jargon without explanation. Compare budgets, specs, and use cases before spending your money.
           </p>
         </div>
 
+        {/* Table of contents */}
+        <section className="themed-card">
+          <p className="themed-eyebrow">Start Here</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <a href="#budget-guide" className="themed-card-title hover:text-accent">Budget guide</a>
+            <a href="#spec-decoder" className="themed-card-title hover:text-accent">Spec decoder</a>
+            <a href="#in-depth-articles" className="themed-card-title hover:text-accent">In-depth articles</a>
+            <a href="#popular-guides" className="themed-card-title hover:text-accent">Popular guides</a>
+          </div>
+        </section>
 
         {/* Budget Breakdown */}
-        <section className="space-y-8">
+        <section id="budget-guide" className="space-y-8 scroll-mt-24">
           <div>
             <h2 className="themed-section-heading">What to Expect at Each Budget</h2>
             <p className="themed-body-text mt-2">Honest breakdown — no marketing fluff.</p>
@@ -139,27 +157,34 @@ export default function BlogPage() {
         </section>
 
         {/* Spec Decoder */}
-        <section className="space-y-8">
+        <section id="spec-decoder" className="space-y-8 scroll-mt-24">
           <div>
             <h2 className="themed-section-heading">Spec Decoder</h2>
             <p className="themed-body-text mt-2">The 6 specs that actually matter — explained simply.</p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-3">
             {SPEC_EXPLAINED.map((s) => (
-              <div key={s.term} className="themed-card space-y-2">
-                <p style={{ fontWeight: 800, fontSize: '0.95rem' }}>{s.term}</p>
-                <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#00d5ff' }}>{s.simple}</p>
-                <p className="themed-card-body">{s.detail}</p>
-              </div>
+              <details key={s.term} className="themed-dropdown">
+                <summary className="themed-dropdown-summary">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                    <span className="themed-dropdown-summary-title">{s.term}</span>
+                    <span className="themed-dropdown-summary-simple">{s.simple}</span>
+                  </div>
+                  <span className="themed-dropdown-arrow">↓</span>
+                </summary>
+                <div className="themed-dropdown-content">
+                  <p className="themed-card-body pt-3">{s.detail}</p>
+                </div>
+              </details>
             ))}
           </div>
         </section>
 
         {/* Articles */}
-        <section className="space-y-8">
+        <section id="in-depth-articles" className="space-y-8 scroll-mt-24">
           <div>
             <h2 className="themed-section-heading">In-Depth Articles</h2>
-            <p className="themed-body-text mt-2">Deep dives — publishing soon.</p>
+            <p className="themed-body-text mt-2">Deep dives and comparison guides.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {ARTICLES.map(({ title, tag, slug, date }) =>
@@ -181,6 +206,22 @@ export default function BlogPage() {
                 </div>
               )
             )}
+          </div>
+        </section>
+
+        {/* Popular Guides */}
+        <section id="popular-guides" className="space-y-6 scroll-mt-24">
+          <div>
+            <h2 className="themed-section-heading">Most Popular Guides</h2>
+            <p className="themed-body-text mt-2">Shortcuts for high-intent laptop searches.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {POPULAR_GUIDES.map((guide) => (
+              <Link key={guide.href} href={guide.href} className="themed-card block transition-transform hover:-translate-y-0.5">
+                <strong className="themed-card-title">{guide.label}</strong>
+                <p className="themed-card-body mt-1">Read the buyer-focused breakdown.</p>
+              </Link>
+            ))}
           </div>
         </section>
 

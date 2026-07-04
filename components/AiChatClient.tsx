@@ -8,6 +8,8 @@ import type { Laptop } from '@/types/laptop'
 
 interface AiChatClientProps {
   laptops: Laptop[]
+  /** Fires with true once the user types or a conversation is underway (used by the landing embed to hide the site header). */
+  onActivityChange?: (active: boolean) => void
 }
 
 type ChatMessage = {
@@ -75,7 +77,7 @@ const SUGGESTIONS = [
   'Premium laptop with OLED display',
 ]
 
-export function AiChatClient({ laptops }: AiChatClientProps) {
+export function AiChatClient({ laptops, onActivityChange }: AiChatClientProps) {
   // Chat States
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -86,6 +88,53 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showToast, setShowToast] = useState(false)
+
+  // 7-day chat storage persistence and sandwich toast timer
+  useEffect(() => {
+    // 1. Restore from localStorage
+    try {
+      const saved = localStorage.getItem('laptick_chat_history')
+      if (saved) {
+        const { timestamp, messages: savedMessages } = JSON.parse(saved)
+        const age = Date.now() - timestamp
+        // Check if chat is younger than 7 days
+        if (age < 7 * 24 * 60 * 60 * 1000) {
+          setMessages(savedMessages)
+        } else {
+          localStorage.removeItem('laptick_chat_history')
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to restore chat history:', e)
+    }
+
+    // 2. Trigger sandwich popup for exactly 5 seconds
+    setShowToast(true)
+    const timer = setTimeout(() => {
+      setShowToast(false)
+    }, 5000)
+
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Auto-save to localStorage whenever messages change
+  useEffect(() => {
+    // Save only if we actually started chatting
+    if (messages.length > 1) {
+      try {
+        localStorage.setItem(
+          'laptick_chat_history',
+          JSON.stringify({
+            timestamp: Date.now(),
+            messages,
+          })
+        )
+      } catch (e) {
+        console.warn('Failed to save chat history:', e)
+      }
+    }
+  }, [messages])
 
   // AI-deduced Filter States (to sync laptop grid)
   const [selectedBrand, setSelectedBrand] = useState<string>('all')
@@ -120,6 +169,11 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
   }, [messages, loading, scrollToBottom])
 
   const hasStartedChatting = messages.length > 1 || loading
+
+  const chatActive = hasStartedChatting || input.trim().length > 0
+  useEffect(() => {
+    onActivityChange?.(chatActive)
+  }, [chatActive, onActivityChange])
 
   // Extract budget logic
   function extractBudget(text: string) {
@@ -246,37 +300,6 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
     return { brand, useCase, budget, nextSearch }
   }
 
-  // Fetch online results from SerpApi
-  async function searchWebLaptops(query: string, maxPriceVal: number | null) {
-    if (!query.trim()) return []
-    setWebSearchLoading(true)
-    setWebSearchError(null)
-    setWebSearchQuery(query)
-
-    try {
-      const params = new URLSearchParams({
-        q: `${query} laptop`,
-        limit: '12',
-      })
-      if (maxPriceVal) params.set('max_price', String(maxPriceVal))
-
-      const res = await fetch(`/api/serpapi/laptops?${params.toString()}`)
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'SerpApi search failed.')
-      }
-
-      return data.results ?? []
-    } catch (err: any) {
-      console.warn('[web search]: No online stores returned results.', err)
-      setWebSearchError(err.message || 'No online stores returned results.')
-      return []
-    } finally {
-      setWebSearchLoading(false)
-    }
-  }
-
   // Handle message sending
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || input).trim()
@@ -337,53 +360,25 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
           currentFiltered = strictFiltered
         }
       }
-      messageLocalLaptops = currentFiltered
+      messageLocalLaptops = currentFiltered.slice(0, 5)
     }
 
-    // Construct cleaned query for SerpApi Web search using accumulated filters
-    const brandStr = nextBrand ? nextBrand : ''
-    const useCaseStr = nextUseCaseObj ? nextUseCaseObj.label : ''
-    const webQuery = `${brandStr} ${useCaseStr} ${parsed.nextSearch}`.trim() || 'laptop'
-    const webSearchPromise = !isGreeting ? searchWebLaptops(webQuery, nextBudget) : Promise.resolve([])
-
-    try {
-      const chatHistory = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }))
-
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chatHistory }),
-      })
-
-      const data = await res.json()
-      const webResultsData = await webSearchPromise
-
-      if (!res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `a-${Date.now()}`,
-            role: 'assistant',
-            content: isGreeting 
-              ? `Hello! I am **Laptick AI**. How can I help you find the perfect laptop today? Tell me your preferred brand, use case, or budget!`
-              : `I have filtered the laptops matching your specifications. You can check the results below. (Note: The chat assistant is temporarily rate-limited, but your filters are active!)`,
-            localLaptops: messageLocalLaptops,
-            webResults: webResultsData,
-          },
-        ])
+    // Simulate thinking delay for natural conversational flow
+    setTimeout(() => {
+      let replyText = ""
+      if (isGreeting) {
+        replyText = "Hello! I am **Laptick AI**, your personal laptop expert. How can I help you find the perfect laptop today? Tell me your preferred brand, use case, or budget!"
+      } else {
+        const brandText = finalBrand !== 'all' ? `**${finalBrand}**` : 'any brand'
+        const useCaseText = finalUseCase !== 'all' ? `**${USE_CASE_LABELS[finalUseCase] || finalUseCase}**` : 'any use case'
+        const budgetText = finalBudget ? `under **${formatPrice(finalBudget)}**` : 'within any budget'
         
-        // Apply filters now
-        setSelectedBrand(finalBrand)
-        setSelectedUseCase(finalUseCase)
-        setMaxPrice(finalBudget)
-        setSearchQuery(parsed.nextSearch)
-        setWebResults(webResultsData)
-
-        setLoading(false)
-        return
+        const count = messageLocalLaptops.length
+        if (count > 0) {
+          replyText = `I have filtered the laptops matching your specifications. I found ${count} match${count > 1 ? 'es' : ''} in the database for ${brandText} laptops suitable for ${useCaseText} ${budgetText}. You can check the results below.`
+        } else {
+          replyText = `I searched our database for ${brandText} laptops suitable for ${useCaseText} ${budgetText}, but couldn't find any direct matches in the catalog. Try adjusting your search query or filters!`
+        }
       }
 
       setMessages((prev) => [
@@ -391,9 +386,9 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
         {
           id: `a-${Date.now()}`,
           role: 'assistant',
-          content: data.reply,
+          content: replyText,
           localLaptops: messageLocalLaptops,
-          webResults: webResultsData,
+          webResults: [],
         },
       ])
 
@@ -402,38 +397,18 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
       setSelectedUseCase(finalUseCase)
       setMaxPrice(finalBudget)
       setSearchQuery(parsed.nextSearch)
-      setWebResults(webResultsData)
-
-    } catch (err: any) {
-      console.warn('[chat api error]: request failed, using database fallback.', err)
-      const webResultsData = await webSearchPromise
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: isGreeting 
-            ? `Hello! I am **Laptick AI**. How can I help you find the perfect laptop today? Tell me your preferred brand, use case, or budget!`
-            : `I have filtered the laptops matching your specifications. You can check the results below. (Note: The chat assistant is temporarily rate-limited, but your filters are active!)`,
-          localLaptops: messageLocalLaptops,
-          webResults: webResultsData,
-        },
-      ])
-
-      // Apply filters now
-      setSelectedBrand(finalBrand)
-      setSelectedUseCase(finalUseCase)
-      setMaxPrice(finalBudget)
-      setSearchQuery(parsed.nextSearch)
-      setWebResults(webResultsData)
-
-    } finally {
+      setWebResults([])
       setLoading(false)
-    }
+    }, 600)
   }
 
   // Reset Filters & Conversation
   const handleReset = () => {
+    try {
+      localStorage.removeItem('laptick_chat_history')
+    } catch (e) {
+      console.warn('Failed to clear chat history:', e)
+    }
     setMessages([
       {
         id: 'welcome',
@@ -582,10 +557,10 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
     <div
       key={`local-${laptop.id}`}
       onClick={() => setSelectedLocalLaptop(laptop)}
-      className="flex-none w-[260px] border-2 border-foreground bg-white shadow-[4px_4px_0_var(--foreground)] rounded-xl overflow-hidden p-3.5 flex flex-col justify-between hover:translate-y-[-2px] hover:shadow-[6px_6px_0_var(--foreground)] transition-all cursor-pointer"
+      className="flex-none w-[215px] sm:w-[260px] border-2 border-foreground bg-white shadow-[4px_4px_0_var(--foreground)] rounded-xl overflow-hidden flex flex-col justify-between hover:translate-y-[-2px] hover:shadow-[6px_6px_0_var(--foreground)] transition-all cursor-pointer"
     >
       <div>
-        <div className="w-full h-32 bg-zinc-100 rounded-lg flex items-center justify-center overflow-hidden mb-3 border border-foreground/10">
+        <div className="w-full h-28 sm:h-36 bg-zinc-100 flex items-center justify-center overflow-hidden border-b-2 border-foreground">
           {laptop.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={laptop.image_url} alt={laptop.name} className="object-contain h-full w-full p-2" />
@@ -593,12 +568,14 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
             <Search className="h-6 w-6 text-foreground/35" />
           )}
         </div>
-        <h3 className="line-clamp-2 font-black leading-tight text-xs mb-1.5 text-foreground">{laptop.name}</h3>
-        <p className="text-[10px] text-muted-foreground line-clamp-1 mb-2 font-mono">
-          {laptop.cpu_model} · {laptop.ram_gb}GB · {laptop.storage_gb}GB SSD
-        </p>
+        <div className="p-3.5 pb-0">
+          <h3 className="line-clamp-2 font-black leading-tight text-xs mb-1.5 text-foreground">{laptop.name}</h3>
+          <p className="text-[10px] text-muted-foreground line-clamp-1 mb-2 font-mono">
+            {laptop.cpu_model} · {laptop.ram_gb}GB · {laptop.storage_gb}GB SSD
+          </p>
+        </div>
       </div>
-      <div>
+      <div className="p-3.5 pt-2">
         <div className="flex items-baseline gap-1 mb-3">
           <span className="text-sm font-black text-foreground">{formatPrice(laptop.price_inr)}</span>
         </div>
@@ -620,11 +597,11 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
     <div
       key={`web-${webLaptop.product_id || webLaptop.position}`}
       onClick={() => setSelectedWebResult(webLaptop)}
-      className="flex-none w-[260px] border-2 border-foreground bg-white shadow-[4px_4px_0_var(--foreground)] rounded-xl overflow-hidden p-3.5 flex flex-col justify-between hover:translate-y-[-2px] hover:shadow-[6px_6px_0_var(--foreground)] transition-all cursor-pointer animate-fade-in"
+      className="flex-none w-[215px] sm:w-[260px] border-2 border-foreground bg-white shadow-[4px_4px_0_var(--foreground)] rounded-xl overflow-hidden flex flex-col justify-between hover:translate-y-[-2px] hover:shadow-[6px_6px_0_var(--foreground)] transition-all cursor-pointer animate-fade-in"
       style={{ borderColor: '#00d5ff' }}
     >
       <div>
-        <div className="w-full h-32 bg-zinc-100 rounded-lg flex items-center justify-center overflow-hidden mb-3 border border-foreground/10">
+        <div className="w-full h-28 sm:h-36 bg-zinc-100 flex items-center justify-center overflow-hidden border-b-2 border-foreground" style={{ borderBottomColor: '#00d5ff' }}>
           {webLaptop.thumbnail ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={webLaptop.thumbnail} alt={webLaptop.title} className="object-contain h-full w-full p-2" />
@@ -632,20 +609,22 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
             <Search className="h-6 w-6 text-foreground/35" />
           )}
         </div>
-        <h3 className="line-clamp-2 font-black leading-tight text-xs mb-1.5 text-foreground">{webLaptop.title}</h3>
-        <p className="text-[10px] text-muted-foreground line-clamp-1 mb-2 font-mono">
-          {webLaptop.source || 'Online Store'}
-        </p>
+        <div className="p-3.5 pb-0">
+          <h3 className="line-clamp-2 font-black leading-tight text-xs mb-1.5 text-foreground">{webLaptop.title}</h3>
+          <p className="text-[10px] text-muted-foreground line-clamp-1 mb-2 font-mono">
+            {webLaptop.source || 'Online Store'}
+          </p>
+        </div>
       </div>
-      <div>
+      <div className="p-3.5 pt-2">
         <div className="flex items-baseline gap-1 mb-3">
           <span className="text-sm font-black text-foreground">{webLaptop.price || 'Check price'}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[9px] font-black uppercase border border-foreground bg-zinc-50 px-2 py-0.5 rounded-none text-accent">
+          <span className="text-[9px] font-black uppercase border border-foreground bg-zinc-50 px-2 py-0.5 rounded-none text-accent" style={{ borderColor: '#00d5ff' }}>
             Online Match
           </span>
-          <button className="text-[10px] font-black uppercase bg-[#00d5ff] border-2 border-foreground px-2.5 py-1 shadow-[2px_2px_0_var(--foreground)] hover:translate-y-0.5 transition-all text-foreground">
+          <button className="text-[10px] font-black uppercase bg-[#00d5ff] border-2 border-foreground px-2.5 py-1 shadow-[2px_2px_0_var(--foreground)] hover:translate-y-0.5 transition-all text-foreground" style={{ borderColor: '#00d5ff' }}>
             View
           </button>
         </div>
@@ -680,29 +659,29 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
             const hasLaptops = isBot && ((message.localLaptops && message.localLaptops.length > 0) || (message.webResults && message.webResults.length > 0))
             return (
               <div key={message.id} className="space-y-3">
-                <div className={`flex gap-3 max-w-[85%] ${isBot ? '' : 'ml-auto flex-row-reverse'}`}>
+                <div className={`flex gap-2 sm:gap-3 max-w-[92%] sm:max-w-[85%] ${isBot ? '' : 'ml-auto flex-row-reverse'}`}>
                   {/* Avatar */}
-                  <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center border-2 border-foreground ${
+                  <div className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 select-none items-center justify-center border-2 border-foreground ${
                     isBot ? 'bg-[#ccff33] text-foreground' : 'bg-primary/20 text-foreground'
                   }`}>
                     {isBot ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
                   </div>
 
                   {/* Content Bubble */}
-                  <div className={`px-4 py-2.5 border-2 border-foreground leading-relaxed shadow-[3px_3px_0_var(--foreground)] rounded-2xl ${
+                  <div className={`px-3.5 py-2 sm:px-4 sm:py-2.5 border-2 border-foreground leading-relaxed shadow-[3px_3px_0_var(--foreground)] rounded-2xl ${
                     isBot ? 'bg-white/75 backdrop-blur-sm text-foreground' : 'bg-white/95 text-foreground'
                   }`}>
-                    <div 
-                      dangerouslySetInnerHTML={{ __html: formatContent(message.content) }} 
-                      className="space-y-1.5 text-sm"
+                    <div
+                      dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
+                      className="space-y-1.5 text-[13px] sm:text-sm"
                     />
                   </div>
                 </div>
 
                 {/* Inline Laptops Row specific to this message */}
                 {hasLaptops && (
-                  <div className="w-full pl-11 animate-fade-in">
-                    <div className="flex flex-row overflow-x-auto gap-4 pb-2 no-scrollbar">
+                  <div className="w-full -mx-4 sm:-mx-6 lg:-mx-7 animate-fade-in overflow-hidden">
+                    <div className="flex flex-row overflow-x-auto gap-3 sm:gap-4 pb-2 no-scrollbar pl-4 pr-4 sm:pl-[76px] sm:pr-6 lg:pl-[80px] lg:pr-7">
                       {message.localLaptops?.map(renderLaptopCard)}
                       {message.webResults?.map(renderWebLaptopCard)}
                     </div>
@@ -731,18 +710,20 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
       {/* Chat Footer / Input area - pinned at bottom */}
       <div className="py-3 bg-transparent flex-none border-t border-foreground/10">
         {/* Quick Suggestions */}
-        <div className="flex flex-wrap justify-center gap-2 mb-3">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => handleSendMessage(s)}
-              disabled={loading}
-              className="text-[10px] font-black uppercase border-2 border-foreground bg-white px-3.5 py-1.5 hover:bg-[#ccff33] active:translate-y-0.5 active:shadow-none transition shadow-[2px_2px_0_var(--foreground)] rounded-full cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        {!hasStartedChatting && (
+          <div className="flex flex-wrap justify-center gap-2 mb-3">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => handleSendMessage(s)}
+                disabled={loading}
+                className="text-[10px] font-black uppercase border-2 border-foreground bg-white px-3.5 py-1.5 hover:bg-[#ccff33] active:translate-y-0.5 active:shadow-none transition shadow-[2px_2px_0_var(--foreground)] rounded-full cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ChatGPT Style Rounded Input Bar */}
         <form
@@ -861,24 +842,7 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
                   </div>
                 )}
 
-                <div className="mt-5 flex flex-wrap gap-2.5">
-                  {selectedLocalLaptop.affiliate_amazon_in && (
-                    <a
-                      href={selectedLocalLaptop.affiliate_amazon_in}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex border-2 border-foreground bg-[#ccff33] px-4 py-2 text-xs font-black text-foreground shadow-[3px_3px_0_var(--foreground)]"
-                    >
-                      Buy on Amazon India
-                    </a>
-                  )}
-                  <a
-                    href={`/laptops/${selectedLocalLaptop.slug}`}
-                    className="inline-flex border-2 border-foreground bg-background px-4 py-2 text-xs font-black text-foreground shadow-[3px_3px_0_var(--foreground)]"
-                  >
-                    Open Dedicated Page
-                  </a>
-                </div>
+                {/* Buttons container removed */}
               </div>
             </div>
           </article>
@@ -960,6 +924,23 @@ export function AiChatClient({ laptops }: AiChatClientProps) {
           </article>
         </div>,
         document.body
+      )}
+      {/* Sandwich Toast popup */}
+      {showToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[9999] px-4 w-full max-w-md animate-bounce">
+          <div className="flex items-center justify-between gap-3 border-2 border-foreground bg-[#ccff33] text-foreground px-4 py-2 text-xs font-black shadow-[4px_4px_0_var(--foreground)] rounded-full">
+            <span className="flex items-center gap-1.5 leading-snug text-left">
+              <span>🥪</span>
+              <span>Chat history is stored for 7 days. Revisit anytime to check recommendations!</span>
+            </span>
+            <button
+              onClick={() => setShowToast(false)}
+              className="text-foreground hover:text-destructive flex items-center justify-center p-0.5 shrink-0 border-2 border-foreground rounded-full bg-white shadow-[1px_1px_0_var(--foreground)] cursor-pointer"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

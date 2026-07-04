@@ -16,12 +16,22 @@ export function LandingScrollLock() {
 
     const lockToWebsite = () => {
       locked = true
+      document.body.classList.add('laptick-transitioning')
       document.body.classList.add('laptick-site-mode')
+      
+      const targetY = getLockY()
+      window.scrollTo({ top: targetY, behavior: 'auto' })
+      
       const clamp = () => window.scrollTo({ top: getLockY(), behavior: 'auto' })
       clamp()
-      window.requestAnimationFrame(clamp)
-      window.setTimeout(clamp, 80)
-      window.setTimeout(clamp, 180)
+      
+      window.requestAnimationFrame(() => {
+        clamp()
+        window.requestAnimationFrame(() => {
+          clamp()
+          document.body.classList.remove('laptick-transitioning')
+        })
+      })
     }
 
     const handleScroll = () => {
@@ -42,8 +52,13 @@ export function LandingScrollLock() {
       })
     }
 
+    // Gestures inside the embedded chat must scroll the chat's own message
+    // log, not fight the page lock (its container uses overscroll-contain).
+    const isInsideChat = (target: EventTarget | null) =>
+      target instanceof Element && target.closest('#landing-chat-slot') !== null
+
     const handleWheel = (event: WheelEvent) => {
-      if (!locked) return
+      if (!locked || isInsideChat(event.target)) return
 
       const nextLockY = getLockY()
       if (event.deltaY < 0 && window.scrollY + event.deltaY <= nextLockY + 2) {
@@ -57,7 +72,7 @@ export function LandingScrollLock() {
     }
 
     const handleTouchMove = (event: TouchEvent) => {
-      if (!locked) return
+      if (!locked || isInsideChat(event.target)) return
 
       const touchY = event.touches[0]?.clientY ?? lastTouchY
       const deltaY = lastTouchY - touchY
@@ -90,6 +105,7 @@ export function LandingScrollLock() {
     return () => {
       if (frame) window.cancelAnimationFrame(frame)
       document.body.classList.remove('laptick-site-mode')
+      document.body.classList.remove('laptick-transitioning')
       window.removeEventListener('scroll', handleScroll)
       window.removeEventListener('wheel', handleWheel)
       window.removeEventListener('touchstart', handleTouchStart)
